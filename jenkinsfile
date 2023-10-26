@@ -1,0 +1,224 @@
+pipeline {
+    agent any
+
+    stages {
+        stage('Preparation') {
+            steps {
+                script {
+                    // Checkout the code from version control
+                    checkout scm
+
+                    // Find environment folders in the 'environments' directory
+                    def folders = sh(returnStdout: true, script: "ls $WORKSPACE/environments/").trim()
+
+                    // Collect folder names and add them to the choiceArray
+                    choiceArray = folders.tokenize().collect {
+                        it
+                    }
+                }
+            }
+        }
+
+        stage('Select Environment Folder') {
+            steps {
+                script {
+                    // Prompt user to select environment folder
+                    def selectedFolder = input(
+                        message: "Select the environment folder for configuration",
+                        parameters: [choice(
+                            name: 'ENV_FOLDER',
+                            choices: choiceArray,
+                            description: 'Select the environment folder for configuration'
+                        )]
+                    )
+
+                    // Set the selected environment folder as an environment variable
+                    env.ENV_FOLDER = selectedFolder
+                }
+            }
+        }
+
+        stage('List tfvars') {
+            steps {
+                script {
+                    // Find .tfvars files in the 'standardized_vpc' directory
+                    def files = sh(returnStdout: true, script: "ls $WORKSPACE/environments/${env.ENV_FOLDER}/*.tfvars")
+
+                    // Extract only the filename without the path and add it to the choiceArray
+                    choiceArray = files.tokenize().collect {
+                        it.tokenize('/').last()
+                    }
+                }
+            }
+        }
+
+        stage('Select tfvars') {
+            steps {
+                script {
+                    // Prompt user to select .tfvars file
+                    def selectedTfvars = input(
+                        message: "Select the .tfvars file for the VPC configuration",
+                        parameters: [choice(
+                            name: 'TERRAFORM_VARS',
+                            choices: choiceArray,
+                            description: 'Select the .tfvars file for the VPC configuration'
+                        )]
+                    )
+
+                    // Check if the user made a selection
+                    if (!selectedTfvars || selectedTfvars.isEmpty()) {
+                        error "Please select the .tfvars file for the VPC configuration."
+                    }
+
+                    // Set the selected .tfvars file as an environment variable
+                    env.TERRAFORM_VARS = selectedTfvars
+                }
+            }
+        }
+
+
+        stage('Initialize and Verify Parameters') {
+            steps {
+                script {
+                    try {
+                        // Check if the TERRAFORM_VARS parameter is provided
+                        if (!env.TERRAFORM_VARS) {
+                            error "Please select the .tfvars file for the VPC configuration."
+                        }
+
+                        // Display the selected .tfvars file content for verification purposes
+                        def terraformVarsPath = "environments/${env.ENV_FOLDER}/${env.TERRAFORM_VARS}"
+                        def terraformVars = readFile(terraformVarsPath)
+                        echo "Selected .tfvars file content:"
+                        echo "${terraformVars}"
+
+                        // Extract the AWS region from the .tfvars content (assuming 'aws_region' variable exists)
+                        def awsRegion = terraformVars.readLines().find { it.startsWith('aws_region') }
+                        awsRegion = awsRegion ? awsRegion.split('=')[1].trim() : null
+
+                        if (!awsRegion) {
+                            error "AWS region not found in the .tfvars file."
+                        }
+
+                        // Extract the ServiceName from the .tfvars content
+                        def serviceNameVar = terraformVars.readLines().find { it.startsWith('ServiceName') }
+                        def serviceName = serviceNameVar ? serviceNameVar.split('=')[1].trim() : null
+
+                        if (!serviceName) {
+                            error "ServiceName not found in the .tfvars file."
+                        }
+
+                        // Extract AWS_PROFILE from the .tfvars content
+                        def awsProfileVar = terraformVars.readLines().find { it.startsWith('AWS_PROFILE') }
+                        def AWS_PROFILE = awsProfileVar ? awsProfileVar.split('=')[1].trim() : null
+
+                        if (!AWS_PROFILE) {
+                            error "AWS_PROFILE not found in the .tfvars file."
+                        }
+
+                        def envVar = terraformVars.readLines().find { it.startsWith('env') }
+                        def Env = envVar ? envVar.split('=')[1].trim() : null
+
+                        if (!Env) {
+                            error "'env' not found in the .tfvars file."
+                        }
+
+                        // Extract s3_bucket_name from the .tfvars content
+                        def s3bucketRegionVar = terraformVars.readLines().find { it.startsWith('s3_bucket_region') }
+                        def s3_bucket_region = s3bucketRegionVar ? s3bucketRegionVar.split('=')[1].trim() : null
+
+                        if (!s3_bucket_region) {
+                            error "s3_bucket_region not found in the .tfvars file."
+                        }
+
+                        def awsAccountVar = terraformVars.readLines().find { it.startsWith('aws_account') }
+                        def aws_account = awsAccountVar ? awsAccountVar.split('=')[1].trim() : null
+
+                        if (!aws_account) {
+                            error "aws_account not found in the .tfvars file."
+                        }
+
+                        def awsSystemNameVar = terraformVars.readLines().find { it.startsWith('system_name') }
+                        def system_name = awsSystemNameVar ? awsSystemNameVar.split('=')[1].trim() : null
+
+                        if (!system_name) {
+                            error "system_name not found in the .tfvars file."
+                        }
+                        // Set the environment variables based on the extracted AWS region and ServiceName
+                        env.AWS_DEFAULT_REGION = awsRegion
+                        env.Env = env
+                        env.aws_account = aws_account
+                        env.ServiceName = serviceName
+                        env.AWS_PROFILE = AWS_PROFILE
+                        env.system_name = system_name
+                        env.bucket_name = "terraform-state"
+                        env.s3_bucket_region = s3_bucket_region
+                        env.bucket_details = "${env.bucket_name}-${env.aws_account}"
+                        env.key = "${env.AWS_DEFAULT_REGION}/${Env}/${env.ServiceName}/application-loadbalancer-${Env}-${awsRegion}-${env.aws_account}.tfstate-terraform.tfstate"
+
+                        // Display all the variable details for verification purposes
+                        echo "AWS_DEFAULT_REGION: ${env.AWS_DEFAULT_REGION}"
+                        echo "aws_account: ${env.aws_account}"
+                        echo "ServiceName: ${env.ServiceName}"
+                        echo "bucket_details: ${env.bucket_details}"
+                        echo "key: ${env.key}"
+                        echo "AWS_PROFILE: ${env.AWS_PROFILE}"
+                        echo "system_name: ${env.system_name}"
+                        echo "s3_bucket_region: ${env.s3_bucket_region}"
+                    } catch (Exception e) {
+                        error "Error occurred during Initialize and Verify Parameters stage: ${e.message}"
+                    }
+                }
+            }
+        }
+
+        stage('Terraform Init') {
+            steps {
+                input(id: 'tf-init-approval', message: 'Terraform Init Required', ok: 'Approve', parameters: [])
+                timeout(time: 1, unit: 'HOURS') {
+                    script {
+                        try {
+                            sh "AWS_PROFILE=${env.AWS_PROFILE} terraform  init " +
+                                    "-backend-config=\"bucket=${env.bucket_details}\" " +
+                                    "-backend-config=\"key=${env.key}\" " +
+                                    "-backend-config=\"region=${env.s3_bucket_region}\" " +
+                                    "-reconfigure" // Added the -reconfigure flag 
+                        } catch (Exception e) {
+                            error "Error occurred during Terraform Init stage: ${e.message}"
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Terraform Plan') {
+            steps {
+                input(id: 'tf-plan-approval', message: 'Terraform Plan Required', ok: 'Approve', parameters: []) 
+                timeout(time: 1, unit: 'HOURS') {
+                    script {
+                        try {
+                            sh "AWS_PROFILE=${env.AWS_PROFILE} terraform  plan --var-file=environments/${env.ENV_FOLDER}/${env.TERRAFORM_VARS}"
+                        } catch (Exception e) {
+                                error "Error occurred during Terraform Plan stage: ${e.message}"
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Terraform Apply') {
+            steps {
+                input(id: 'tf-apply-approval', message: 'Terraform Apply Required', ok: 'Approve', parameters: []) 
+                timeout(time: 1, unit: 'HOURS') {
+                    script {
+                        try {
+                            sh "AWS_PROFILE=${env.AWS_PROFILE} terraform  apply --var-file=environments/${env.ENV_FOLDER}/${env.TERRAFORM_VARS} -auto-approve"
+                        } catch (Exception e) {
+                            error "Error occurred during Terraform Apply stage: ${e.message}"
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

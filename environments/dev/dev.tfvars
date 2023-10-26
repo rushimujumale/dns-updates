@@ -1,0 +1,8 @@
+public_zone_name = "rushibaba.com"
+private_zone_name = "rushibaba.com"
+vpc_id = "vpc-086c3d41bdf635aa5"
+aws_region = "us-east-1"
+AWS_PROFILE = "dev-faasos"
+s3_bucket_region       = "us-east-1"
+Product                = "infra"
+ServiceName            = "DNS_hosted_zone"
