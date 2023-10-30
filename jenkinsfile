@@ -138,19 +138,19 @@ pipeline {
                             error "aws_account not found in the .tfvars file."
                         }
 
-                        def awsSystemNameVar = terraformVars.readLines().find { it.startsWith('system_name') }
-                        def system_name = awsSystemNameVar ? awsSystemNameVar.split('=')[1].trim() : null
+                        // def awsSystemNameVar = terraformVars.readLines().find { it.startsWith('system_name') }
+                        // def system_name = awsSystemNameVar ? awsSystemNameVar.split('=')[1].trim() : null
 
-                        if (!system_name) {
-                            error "system_name not found in the .tfvars file."
-                        }
+                        // if (!system_name) {
+                        //     error "system_name not found in the .tfvars file."
+                        // }
                         // Set the environment variables based on the extracted AWS region and ServiceName
                         env.AWS_DEFAULT_REGION = awsRegion
                         env.Env = env
                         env.aws_account = aws_account
                         env.ServiceName = serviceName
                         env.AWS_PROFILE = AWS_PROFILE
-                        env.system_name = system_name
+                        // env.system_name = system_name
                         env.bucket_name = "terraform-state"
                         env.s3_bucket_region = s3_bucket_region
                         env.bucket_details = "${env.bucket_name}-${env.aws_account}"
